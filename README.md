@@ -93,7 +93,7 @@ This repository contains the visualization results for the Multi-Chart QA benchm
 
 ## Live Demo
 
-Visit the live demo at: [https://mosy.github.io/Multi-chart-QA-results](https://mosy.github.io/Multi-chart-QA-results)
+Visit the live demo at: [https://sytmxl.github.io/Multi-chart-QA-results/visualize_results.html](https://sytmxl.github.io/Multi-chart-QA-results/visualize_results.html)
 
 ## Local Development
 
