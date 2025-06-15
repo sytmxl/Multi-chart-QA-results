@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chart Analysis</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 800px;
+      padding: 20px;
+    }
+
+    .chart-container {
+      position: relative;
+    }
+
+    .node text {
+      pointer-events: none;
+      font-size: 14px;
+      fill: #444;
+      font-weight: 400;
+    }
+
+    .arc {
+      transition: opacity 0.2s;
+    }
+
+    .arc:hover {
+      opacity: 0.85;
+    }
+
+    .tooltip {
+      position: absolute;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="chart-container">
+      <div id="tooltip" class="tooltip"></div>
+      <svg width="600" height="600"></svg>
+    </div>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const data = {
+      name: "Total",
+      children: [
+        {
+          name: "Comp.",
+          value: 34.1,
+          color: "#E8F4F9",
+          children: [
+            { name: "Cont.", value: 15.0, color: "#E8F4F9" },
+            { name: "Struct.", value: 19.1, color: "#E8F4F9" }
+          ]
+        },
+        {
+          name: "Parallel",
+          value: 33.4,
+          color: "#E8F6E8",
+          children: [
+            { name: "Cont.", value: 13.6, color: "#E8F6E8" },
+            { name: "Mixed", value: 11.5, color: "#E8F6E8" },
+            { name: "Struct.", value: 8.3, color: "#E8F6E8" }
+          ]
+        },
+        {
+          name: "Direct",
+          value: 22.4,
+          color: "#FFF3E8",
+          children: [
+            { name: "Struct.", value: 14.1, color: "#FFF3E8" },
+            { name: "Cont.", value: 8.3, color: "#FFF3E8" }
+          ]
+        },
+        {
+          name: "Seq.",
+          value: 10.1,
+          color: "#FFE8F3",
+          children: [
+            { name: "Cont.", value: 10.1, color: "#FFE8F3" }
+          ]
+        }
+      ]
+    };
+
+    const width = 600;
+    const height = 600;
+    const radius = Math.min(width, height) / 2;
+
+    const partition = data => {
+      const root = d3.hierarchy(data)
+        .sum(d => d.value)
+        .sort((a, b) => b.value - a.value);
+      return d3.partition()
+        .size([2 * Math.PI, radius])(root);
+    };
+
+    const arc = d3.arc()
+      .startAngle(d => d.x0)
+      .endAngle(d => d.x1)
+      .innerRadius(d => d.y0)
+      .outerRadius(d => d.y1 - 1)
+      .cornerRadius(1);
+
+    const root = partition(data);
+    const svg = d3.select("svg")
+      .attr("viewBox", [-width / 2, -height / 2, width, height])
+      .style("font", "14px sans-serif");
+
+    const tooltip = d3.select("#tooltip");
+
+    svg.selectAll("path")
+      .data(root.descendants().filter(d => d.depth))
+      .join("path")
+        .attr("class", "arc")
+        .attr("d", arc)
+        .attr("fill", d => d.data.color || d.parent.data.color)
+        .attr("stroke", "white")
+        .attr("stroke-width", "1")
+        .on("mouseover", (event, d) => {
+          tooltip
+            .style("opacity", 1)
+            .html(`${d.data.name}: ${d.value.toFixed(1)}%`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 10) + "px");
+        })
+        .on("mousemove", (event) => {
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 10) + "px");
+        })
+        .on("mouseout", () => {
+          tooltip.style("opacity", 0);
+        });
+
+    svg.selectAll("text")
+      .data(root.descendants().filter(d => d.depth && (d.x1 - d.x0 > 0.08)))
+      .join("text")
+        .attr("transform", d => {
+          const x = (d.x0 + d.x1) / 2 * 180 / Math.PI;
+          const y = (d.y0 + d.y1) / 2;
+          return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
+        })
+        .attr("dy", "0.35em")
+        .attr("text-anchor", d => (d.x0 + d.x1) / 2 < Math.PI ? "start" : "end")
+        .text(d => `${d.data.name} ${d.value.toFixed(1)}%`);
+  </script>
+</body>
+</html>
