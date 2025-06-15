@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Chart QA Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .search-box {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .filter-section {
+            margin-bottom: 15px;
+        }
+        .filter-section-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .filter-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #e9ecef;
+            white-space: nowrap;
+        }
+        .filter-button.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .stats {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .question-container {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: white;
+        }
+        .question-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .charts-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .chart {
+            max-width: 400px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .chart img {
+            width: 100%;
+            height: auto;
+        }
+        .answers-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .answer-box {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .ground-truth {
+            background-color: #e9ecef;
+        }
+        .gpt-answer {
+            background-color: #d4edda;
+        }
+        .gpt-answer.incorrect {
+            background-color: #f8d7da;
+        }
+        .emoji {
+            margin-right: 5px;
+        }
+        .model-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stats-box {
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .stats-box h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        .stats-label {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Multi-Chart QA Results</h1>
+        
+        <div class="controls">
+            <input type="text" id="searchInput" class="search-box" placeholder="Search questions...">
+            
+            <div class="filter-section">
+                <div class="filter-section-title">Question Type</div>
+                <div class="filter-buttons">
+                    <button class="filter-button" onclick="filterByType('all')">All Types</button>
+                    <button class="filter-button" onclick="filterByType('multiple-choice')">Multiple Choice</button>
+                    <button class="filter-button" onclick="filterByType('open-ended')">Open Ended</button>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <div class="filter-section-title">Answer Status</div>
+                <div class="filter-buttons">
+                    <button class="filter-button" onclick="filterByCorrectness('all')">All</button>
+                    <button class="filter-button" onclick="filterByCorrectness('all-correct')">All Correct</button>
+                    <button class="filter-button" onclick="filterByCorrectness('all-incorrect')">All Incorrect</button>
+                    <button class="filter-button" onclick="filterByCorrectness('mixed')">Mixed Results</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-container" id="stats">
+            Loading statistics...
+        </div>
+
+        <div id="questionsContainer">
+            Loading questions...
+        </div>
+    </div>
+
+    <script>
+        let allQuestions = [];
+        let currentTypeFilter = 'all';
+        let currentCorrectnessFilter = 'all';
+        let currentTagFilter = 'all';
+        let currentCommentFilter = 'all';
+        const TAG_OPTIONS = ['有歧义', '模型都错', '数据问题', '需复查'];
+
+        // 本地存储key
+        const ANNOTATION_KEY = 'qa_annotations_v1';
+
+        // 读取/保存标注
+        function loadAnnotations() {
+            try {
+                return JSON.parse(localStorage.getItem(ANNOTATION_KEY)) || {};
+            } catch {
+                return {};
+            }
+        }
+        function saveAnnotations(annotations) {
+            localStorage.setItem(ANNOTATION_KEY, JSON.stringify(annotations));
+        }
+
+        // 导出功能
+        function exportAnnotations() {
+            const data = localStorage.getItem(ANNOTATION_KEY) || '{}';
+            const blob = new Blob([data], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'qa_annotations.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 导入功能
+        function importAnnotations(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    const old = loadAnnotations();
+                    saveAnnotations({...old, ...imported});
+                    updateDisplay();
+                    alert('导入成功');
+                } catch {
+                    alert('导入失败，文件格式错误');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 标签筛选
+        function filterByTag(tag) {
+            currentTagFilter = tag;
+            document.querySelectorAll('.tag-filter-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.tag-filter-button[data-tag="${tag}"]`).classList.add('active');
+            updateDisplay();
+        }
+        // 评论筛选
+        function filterByComment(hasComment) {
+            currentCommentFilter = hasComment;
+            document.querySelectorAll('.comment-filter-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.comment-filter-button[data-comment="${hasComment}"]`).classList.add('active');
+            updateDisplay();
+        }
+
+        function loadData() {
+            console.log('Starting to load data...');
+            
+            // First try to load sampled questions
+            fetch('results/sampled_questions.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to load sampled questions: ${response.status} ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(sampledQuestions => {
+                    console.log(`Loaded ${sampledQuestions.length} sampled questions`);
+                    
+                    // Load evaluation results
+                    return fetch('results/evaluation_results.json')
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Failed to load evaluation results: ${response.status} ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(evaluations => {
+                            // Load results for each model
+                            const modelPromises = ['gpt-4o', 'gpt-4o-mini'].map(model => {
+                                // Convert model name to filename format
+                                const filename = `results/benchmark_results_${model.replace(/-/g, '_')}.json`;
+                                console.log(`Loading results for ${model} from ${filename}`);
+                                
+                                return fetch(filename)
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            console.warn(`No results found for model ${model} in ${filename}`);
+                                            return [];
+                                        }
+                                        return response.json();
+                                    })
+                                    .then(results => {
+                                        console.log(`Loaded ${results.length} results for ${model}`);
+                                        return { model, results };
+                                    });
+                            });
+
+                            return Promise.all(modelPromises)
+                                .then(modelResults => {
+                                    console.log('Combining results with questions...');
+                                    
+                                    // Combine sampled questions with results from all models
+                                    allQuestions = sampledQuestions.map(question => {
+                                        const questionWithResults = {
+                                            ...question,
+                                            results: {}
+                                        };
+                                        
+                                        modelResults.forEach(({ model, results }) => {
+                                            const result = results.find(r => r.id === question.id);
+                                            if (result) {
+                                                const evaluation = evaluations.find(e => e.id === question.id && e.model === model);
+                                                questionWithResults.results[model] = {
+                                                    answer: result.gpt_answer,
+                                                    isCorrect: evaluation ? evaluation.is_correct : false
+                                                };
+                                            }
+                                        });
+                                        
+                                        return questionWithResults;
+                                    });
+
+                                    console.log(`Combined ${allQuestions.length} questions with results`);
+                                    updateDisplay();
+                                    updateStats();
+                                });
+                        });
+                })
+                .catch(error => {
+                    console.error('Error loading data:', error);
+                    document.getElementById('questionsContainer').innerHTML = `
+                        <div style="color: red; padding: 20px;">
+                            <h3>Error Loading Data</h3>
+                            <p>${error.message}</p>
+                            <p>Please make sure:</p>
+                            <ul>
+                                <li>You are running the Python server (python server.py)</li>
+                                <li>All JSON files are in the results directory:
+                                    <ul>
+                                        <li>sampled_questions.json</li>
+                                        <li>benchmark_results_gpt_4o.json</li>
+                                        <li>benchmark_results_gpt_4o_mini.json</li>
+                                        <li>evaluation_results.json</li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                    `;
+                });
+        }
+
+        function updateDisplay() {
+            const container = document.getElementById('questionsContainer');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const annotations = loadAnnotations();
+            
+            const filteredQuestions = allQuestions.filter(q => {
+                // Search term filter
+                const matchesSearch = q.question.toLowerCase().includes(searchTerm);
+                
+                // Question type filter
+                const isMC = isMultipleChoice(q.ground_truth);
+                const matchesType = currentTypeFilter === 'all' || 
+                    (currentTypeFilter === 'multiple-choice' && isMC) ||
+                    (currentTypeFilter === 'open-ended' && !isMC);
+                
+                // Correctness filter
+                let matchesCorrectness = true;
+                if (currentCorrectnessFilter !== 'all') {
+                    const results = Object.values(q.results);
+                    if (currentCorrectnessFilter === 'all-correct') {
+                        matchesCorrectness = results.every(r => r.isCorrect);
+                    } else if (currentCorrectnessFilter === 'all-incorrect') {
+                        matchesCorrectness = results.every(r => !r.isCorrect);
+                    } else if (currentCorrectnessFilter === 'mixed') {
+                        matchesCorrectness = results.some(r => r.isCorrect) && results.some(r => !r.isCorrect);
+                    }
+                }
+                
+                // Tag filter
+                let matchesTag = true;
+                if (currentTagFilter !== 'all') {
+                    const ann = annotations[q.id] || {};
+                    matchesTag = (ann.tags || []).includes(currentTagFilter);
+                }
+                
+                // Comment filter
+                let matchesComment = true;
+                if (currentCommentFilter !== 'all') {
+                    const ann = annotations[q.id] || {};
+                    matchesComment = currentCommentFilter === 'has' ? (ann.comment && ann.comment.trim()) : !(ann.comment && ann.comment.trim());
+                }
+                
+                return matchesSearch && matchesType && matchesCorrectness && matchesTag && matchesComment;
+            });
+
+            container.innerHTML = filteredQuestions.map(q => {
+                const ann = annotations[q.id] || {tags: [], comment: ''};
+                // Tag chips
+                const tagChips = (ann.tags || []).map(tag => `<span style="display:inline-block;background:#b3e5fc;color:#0277bd;border-radius:4px;padding:2px 8px;margin-right:4px;font-size:12px;">${tag}</span>`).join('');
+                // Tag selector
+                const tagSelector = TAG_OPTIONS.map(tag =>
+                    `<label style="margin-right:8px;">
+                        <input type="checkbox" value="${tag}" ${ann.tags && ann.tags.includes(tag) ? 'checked' : ''} onchange="onTagChange('${q.id}', this)">
+                        ${tag}
+                    </label>`
+                ).join('') +
+                `<input type="text" placeholder="自定义标签" style="width:80px;" onkeydown="if(event.key==='Enter'){onCustomTag('${q.id}', this)}">`;
+
+                // Comment input box
+                const commentBox = `<textarea style="width:100%;min-height:40px;" placeholder="写下你的评论..." onblur="onCommentChange('${q.id}', this)">${ann.comment || ''}</textarea>`;
+
+                // Highlight
+                const highlight = (ann.tags && ann.tags.length) || (ann.comment && ann.comment.trim()) ? 'box-shadow:0 0 0 2px #007bff;' : '';
+
+                return `
+                    <div class="question-container" style="${highlight}">
+                        <div class="question-header">Question ${q.id}</div>
+                        <div class="question-text">${q.question}</div>
+                        
+                        <div class="charts-container">
+                            ${q.charts.map(chart => `
+                                <div class="chart">
+                                    <img src="${chart}" alt="Chart">
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="answers-container">
+                            <div class="answer-box ground-truth">
+                                <div class="model-name">Ground Truth</div>
+                                <div>${q.ground_truth}</div>
+                            </div>
+                            
+                            ${Object.entries(q.results).map(([model, result]) => `
+                                <div class="answer-box gpt-answer ${result.isCorrect ? '' : 'incorrect'}">
+                                    <div class="model-name">${model} <span class="emoji">${result.isCorrect ? '✅' : '❌'}</span></div>
+                                    <div>${result.answer}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div style="margin-top:10px;">
+                            <div style="margin-bottom:4px;">标签: ${tagChips}</div>
+                            <div>${tagSelector}</div>
+                            <div style="margin-top:6px;">评论:</div>
+                            ${commentBox}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function isMultipleChoice(groundTruth) {
+            return /^[A-D]$/i.test(groundTruth.trim());
+        }
+
+        function filterByType(type) {
+            currentTypeFilter = type;
+            document.querySelectorAll('.filter-section:nth-child(2) .filter-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.filter-section:nth-child(2) .filter-button[onclick="filterByType('${type}')"]`).classList.add('active');
+            updateDisplay();
+        }
+
+        function filterByCorrectness(correctness) {
+            currentCorrectnessFilter = correctness;
+            document.querySelectorAll('.filter-section:nth-child(3) .filter-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.filter-section:nth-child(3) .filter-button[onclick="filterByCorrectness('${correctness}')"]`).classList.add('active');
+            updateDisplay();
+        }
+
+        function updateStats() {
+            const stats = document.getElementById('stats');
+            const total = allQuestions.length;
+            
+            // Calculate overall statistics
+            const modelStats = {};
+            ['gpt-4o', 'gpt-4o-mini'].forEach(model => {
+                const correct = allQuestions.filter(q => 
+                    q.results[model] && q.results[model].isCorrect
+                ).length;
+                const answered = allQuestions.filter(q => q.results[model]).length;
+                modelStats[model] = {
+                    correct,
+                    answered,
+                    accuracy: answered ? (correct / answered * 100).toFixed(2) : 'N/A'
+                };
+            });
+
+            // Calculate statistics by question type
+            const typeStats = {};
+            ['multiple-choice', 'open-ended'].forEach(type => {
+                const typeQuestions = allQuestions.filter(q => 
+                    type === 'multiple-choice' ? isMultipleChoice(q.ground_truth) : !isMultipleChoice(q.ground_truth)
+                );
+                const typeModelStats = {};
+                
+                ['gpt-4o', 'gpt-4o-mini'].forEach(model => {
+                    const correct = typeQuestions.filter(q => 
+                        q.results[model] && q.results[model].isCorrect
+                    ).length;
+                    const answered = typeQuestions.filter(q => q.results[model]).length;
+                    typeModelStats[model] = {
+                        correct,
+                        answered,
+                        accuracy: answered ? (correct / answered * 100).toFixed(2) : 'N/A'
+                    };
+                });
+                
+                typeStats[type] = {
+                    total: typeQuestions.length,
+                    modelStats: typeModelStats
+                };
+            });
+
+            stats.innerHTML = `
+                <div class="stats-box">
+                    <h3>Overall Statistics</h3>
+                    <div class="stats-row">
+                        <span class="stats-label">Total Questions:</span>
+                        <span>${total}</span>
+                    </div>
+                    ${Object.entries(modelStats).map(([model, stat]) => `
+                        <div class="stats-row">
+                            <span class="stats-label">${model}:</span>
+                            <span>${stat.correct}/${stat.answered} correct (${stat.accuracy}%)</span>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="stats-box">
+                    <h3>Multiple Choice Questions</h3>
+                    <div class="stats-row">
+                        <span class="stats-label">Total:</span>
+                        <span>${typeStats['multiple-choice'].total}</span>
+                    </div>
+                    ${Object.entries(typeStats['multiple-choice'].modelStats).map(([model, stat]) => `
+                        <div class="stats-row">
+                            <span class="stats-label">${model}:</span>
+                            <span>${stat.correct}/${stat.answered} correct (${stat.accuracy}%)</span>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="stats-box">
+                    <h3>Open-Ended Questions</h3>
+                    <div class="stats-row">
+                        <span class="stats-label">Total:</span>
+                        <span>${typeStats['open-ended'].total}</span>
+                    </div>
+                    ${Object.entries(typeStats['open-ended'].modelStats).map(([model, stat]) => `
+                        <div class="stats-row">
+                            <span class="stats-label">${model}:</span>
+                            <span>${stat.correct}/${stat.answered} correct (${stat.accuracy}%)</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Tag change
+        window.onTagChange = function(qid, checkbox) {
+            const annotations = loadAnnotations();
+            const ann = annotations[qid] || {tags: [], comment: ''};
+            if (checkbox.checked) {
+                if (!ann.tags.includes(checkbox.value)) ann.tags.push(checkbox.value);
+            } else {
+                ann.tags = ann.tags.filter(t => t !== checkbox.value);
+            }
+            annotations[qid] = ann;
+            saveAnnotations(annotations);
+            updateDisplay();
+        }
+        // Custom tag
+        window.onCustomTag = function(qid, input) {
+            const val = input.value.trim();
+            if (!val) return;
+            const annotations = loadAnnotations();
+            const ann = annotations[qid] || {tags: [], comment: ''};
+            if (!ann.tags.includes(val)) ann.tags.push(val);
+            annotations[qid] = ann;
+            saveAnnotations(annotations);
+            input.value = '';
+            updateDisplay();
+        }
+        // Comment change
+        window.onCommentChange = function(qid, textarea) {
+            const annotations = loadAnnotations();
+            const ann = annotations[qid] || {tags: [], comment: ''};
+            ann.comment = textarea.value;
+            annotations[qid] = ann;
+            saveAnnotations(annotations);
+            updateDisplay();
+        }
+
+        // Add global filter and import/export buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            // Existing loadData
+            loadData();
+
+            // Add global filter section
+            const controls = document.querySelector('.controls');
+            const tagFilterHtml = `
+                <div style="margin:8px 0;">
+                    <span style="font-weight:bold;">Tag Filter:</span>
+                    <button class="tag-filter-button active" data-tag="all" onclick="filterByTag('all')">All</button>
+                    ${TAG_OPTIONS.map(tag => `<button class="tag-filter-button" data-tag="${tag}" onclick="filterByTag('${tag}')">${tag}</button>`).join('')}
+                </div>
+            `;
+            const commentFilterHtml = `
+                <div style="margin:8px 0;">
+                    <span style="font-weight:bold;">Comment Filter:</span>
+                    <button class="comment-filter-button active" data-comment="all" onclick="filterByComment('all')">All</button>
+                    <button class="comment-filter-button" data-comment="has" onclick="filterByComment('has')">Has Comment</button>
+                    <button class="comment-filter-button" data-comment="none" onclick="filterByComment('none')">No Comment</button>
+                </div>
+            `;
+            const exportHtml = `
+                <button onclick="exportAnnotations()" style="margin-right:8px;">Export Annotations</button>
+                <label style="display:inline-block;">
+                    <span style="background:#eee;padding:4px 8px;border-radius:4px;cursor:pointer;">Import Annotations</span>
+                    <input type="file" accept=".json" style="display:none;" onchange="importAnnotations(event)">
+                </label>
+            `;
+            controls.insertAdjacentHTML('beforeend', tagFilterHtml + commentFilterHtml + exportHtml);
+        });
+
+        document.getElementById('searchInput').addEventListener('input', updateDisplay);
+    </script>
+</body>
+</html> 
